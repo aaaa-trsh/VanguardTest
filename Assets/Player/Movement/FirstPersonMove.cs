@@ -3,17 +3,17 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public enum MovementState {
-    Idle,
-    Walking,
-    Falling,
-    Wallrunning
-}
-
 public enum WallrunState {
     None,
     Left,
     Right
+}
+
+public enum CrouchState {
+    None,
+    Sneak,
+    Slide,
+    Queued
 }
 public class FirstPersonMove : MonoBehaviour
 {
@@ -35,7 +35,8 @@ public class FirstPersonMove : MonoBehaviour
     [Header("Wallrun Settings")]
     public WallrunState wallrunState = WallrunState.None;
     public float wallrunJumpVelocity = 3;
-
+    public float baseWallrunSpeed = 6;
+    
     private Vector3 wallNormal;
     private Vector3 wallDirection;
     private float wallrunSpeed;
@@ -43,9 +44,20 @@ public class FirstPersonMove : MonoBehaviour
     private bool wallRunEnabled = true;
     private RaycastHit wallHit;
 
+    [Header("Crouch Settings")]
+    public CrouchState crouchState = CrouchState.None;
+    public float slideBoost = 1.5f;
+    private Vector3 slideVel;
+
+    public float sneakSpeed = 0.7f;
+    public float eyeHeight = 1;
+    public float crouchedEyeHeight = 0.7f; 
+    public float minimumSlideVelocity = 2f; 
+
+    private float crouchTime = 0; 
+
     [Header("Misc")]
     [SerializeField]
-    public MovementState movementState = MovementState.Idle;
     public LayerMask environmentMask;
     private Rigidbody rb;
     private FirstPersonLook camManager;
@@ -72,10 +84,12 @@ public class FirstPersonMove : MonoBehaviour
                     ExitWallRun();
                 }
                 else {
-                    if (Vector3.Distance(walkVector, Vector3.zero) < 0.5f)
-                        rb.velocity = new Vector3(rb.velocity.x, jumpVelocity, rb.velocity.z);
-                    else
-                        rb.velocity = new Vector3(immediateWalkVector.x, jumpVelocity, immediateWalkVector.z);
+                    Vector3 jumpDirection = crouchState == CrouchState.Slide ? slideVel : rb.velocity;
+                    if (Vector3.Distance(targetMoveInputVector, Vector3.zero) > 0.5f && !isGrounded) {
+                        jumpDirection = immediateWalkVector.normalized * Vector3.Scale(rb.velocity, new Vector3(1, 0, 1)).magnitude;
+                    }
+                    jumpDirection.y = jumpVelocity;
+                    rb.velocity = jumpDirection;
                 }
 
                 jumpCount++;
@@ -84,31 +98,72 @@ public class FirstPersonMove : MonoBehaviour
         inputJump = newValue;
     }
 
+    private bool inputCrouch;
+    public void UpdateCrouchInput(InputAction.CallbackContext context) {
+        var newValue = context.ReadValue<float>() == 1;
+        if (newValue != inputCrouch) {
+            if (newValue == true) {
+                if (wallrunState != WallrunState.None) {
+                    rb.velocity = (wallDirection.normalized * rb.velocity.magnitude) + wallNormal;
+                    ExitWallRun();
+                }
+
+                if (isGrounded)
+                    StartCrouch();
+                else
+                    crouchState = CrouchState.Queued;
+            } else {
+                crouchState = CrouchState.None;
+            }
+        }
+        inputCrouch = newValue;
+    }
+
     void Start() {
         rb = GetComponent<Rigidbody>();
         camManager = GetComponent<FirstPersonLook>();
     }
 
-    void Update() {
-    }
-
     void FixedUpdate() {
-        moveInputVector = Vector2.Lerp(moveInputVector, targetMoveInputVector, Time.fixedDeltaTime * 1/acceleration);
-        isGrounded = Physics.Raycast(transform.position, Vector3.down, out groundHit, .53f, environmentMask);
+
+        bool newGrounded = Physics.Raycast(transform.position, Vector3.down, out groundHit, .53f, environmentMask);
+        if (isGrounded != newGrounded) {
+            if (newGrounded)
+                OnGrounded();
+            else
+                OnExitGround();
+        }
+
+        isGrounded = newGrounded;
         WallRunCheck();
         
         Vector3 targetVelocity = rb.velocity;
 
+        moveInputVector = Vector2.Lerp(moveInputVector, targetMoveInputVector, Time.fixedDeltaTime * 1/acceleration);
         walkVector = Vector3.Cross(transform.TransformDirection(new Vector3(moveInputVector.y, 0, -moveInputVector.x)), isGrounded ? groundHit.normal : Vector3.up) * speed;
         immediateWalkVector = Vector3.Cross(transform.TransformDirection(new Vector3(targetMoveInputVector.y, 0, -targetMoveInputVector.x)), isGrounded ? groundHit.normal : Vector3.up) * speed;
         
         if (isGrounded) {
             jumpCount = 0;
-            targetVelocity = walkVector;
+
+            if (crouchState == CrouchState.Sneak || crouchState == CrouchState.Slide) {
+                camManager.cam.transform.localPosition = Vector3.up * crouchedEyeHeight;
+                if (crouchState == CrouchState.Slide) {
+                    slideVel = rb.velocity.normalized * 7;
+                    targetVelocity = slideVel;
+                } else {
+                    targetVelocity = (walkVector / speed) * sneakSpeed;
+                }
+                crouchTime += Time.fixedDeltaTime;
+            }
+            else {
+                camManager.cam.transform.localPosition = Vector3.up * eyeHeight;
+                targetVelocity = walkVector;
+            }
             targetVelocity.y = rb.velocity.y;
         }
         else if (wallrunState == WallrunState.None) {
-            targetVelocity = (rb.velocity + (immediateWalkVector.normalized * airstrafeMultiplier)).normalized * rb.velocity.magnitude;
+            targetVelocity = (rb.velocity + (immediateWalkVector.normalized * airstrafeMultiplier)).normalized * Mathf.Max(rb.velocity.magnitude, baseWallrunSpeed);
             targetVelocity.y = rb.velocity.y;
         }
         else {
@@ -119,6 +174,31 @@ public class FirstPersonMove : MonoBehaviour
 
         //Debug.DrawLine(transform.position, transform.position + wallDirection, Color.red);
         rb.velocity = targetVelocity;
+    }
+
+    void OnGrounded() {
+        if (crouchState == CrouchState.Queued) {
+            StartCrouch();
+        }
+    }
+
+    void OnExitGround() {
+        camManager.cam.transform.localPosition = Vector3.up * eyeHeight;
+        if (crouchState != CrouchState.None) {
+            crouchState = CrouchState.Queued;
+        }
+    }
+
+    void StartCrouch() {
+        crouchTime = 0;
+        float xzMag = Vector3.Scale(rb.velocity, new Vector3(1, 0, 1)).magnitude;
+        if (xzMag > minimumSlideVelocity) {
+            crouchState = CrouchState.Slide;
+        }
+        else {
+            crouchState = CrouchState.Sneak;
+        }
+        Debug.Log(crouchState);
     }
 
     float wallrunCheckLength = 0.6f;
@@ -149,7 +229,6 @@ public class FirstPersonMove : MonoBehaviour
                     wallNormal = leftHit.normal;
                     wallDirection = Vector3.Cross(wallNormal, Vector3.up);
                     wallHit = leftHit;
-
                 }
                 else if (rightCheck && Mathf.Abs(Vector3.Dot(rightHit.normal, Vector3.up)) < 0.1f) {
                     if (wallrunState == WallrunState.None)
@@ -158,6 +237,7 @@ public class FirstPersonMove : MonoBehaviour
                     wallDirection = Vector3.Cross(wallNormal, Vector3.up);
                     wallHit = rightHit;
                 }
+                camManager.targetDutch = -15 * Vector3.Dot(transform.forward, wallDirection);
                 wallrunTime += Time.fixedDeltaTime;
                 wallDirection *= Vector3.Dot(transform.forward, wallDirection);
             }
@@ -168,19 +248,19 @@ public class FirstPersonMove : MonoBehaviour
                 }
                 wallNormal = Vector3.zero;
                 wallDirection = Vector3.zero;
+                camManager.targetDutch = 0;
             }
         } 
         else {
             wallrunState = WallrunState.None;
             wallNormal = Vector3.zero;
             wallDirection = Vector3.zero;
+            camManager.targetDutch = 0;
         }
     }
 
     void EnableWallRun() {
         wallRunEnabled = true;
-        camManager.targetDutch = 0;
-
     }
     void ExitWallRun() {
         wallRunEnabled = false;

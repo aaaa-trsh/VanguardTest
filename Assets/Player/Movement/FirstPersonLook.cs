@@ -35,8 +35,12 @@ public class FirstPersonLook : MonoBehaviour
         xRotation = Mathf.Clamp(xRotation, -90, 90);
 
         transform.rotation = Quaternion.Euler(new Vector3(0.0f, yRotation, 0.0f));
-        //float tilt = Mathf.Lerp(cam.transform.eulerAngles.z, targetDutch, Time.deltaTime * 10);
-        cam.transform.eulerAngles = new Vector3(xRotation, yRotation, cam.transform.eulerAngles.z);
+        //Quaternion tilt =  Quaternion.Euler(xRotation, yRotation, Mathf.Lerp(cam.transform.eulerAngles.z, targetDutch, Time.deltaTime * 10));
+        cam.transform.rotation = Quaternion.Lerp(
+            Quaternion.Euler(xRotation, yRotation, cam.transform.eulerAngles.z), 
+            Quaternion.Euler(xRotation, yRotation, targetDutch), 
+            Time.deltaTime * 10
+        );
     }
 
     public void SetLookEnabled(bool enabled) {

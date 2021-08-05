@@ -6737,7 +6737,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 385140346}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 1, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
@@ -35204,7 +35204,19 @@ MonoBehaviour:
     m_ActionId: de302b41-e168-42e2-8ebb-f383e9a48398
     m_ActionName: Vanguard (Pilot)/Jump[/Keyboard/space]
   - m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1826002591}
+        m_TargetAssemblyTypeName: FirstPersonMove, Assembly-CSharp
+        m_MethodName: UpdateCrouchInput
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
     m_ActionId: 8b036aba-7f1a-4616-80c6-6cac074655a6
     m_ActionName: Vanguard (Pilot)/Crouch[/Keyboard/shift]
   - m_PersistentCalls:
@@ -35250,8 +35262,13 @@ MonoBehaviour:
   maxJumpCount: 2
   airstrafeMultiplier: 0.1
   wallrunState: 0
-  wallNormal: {x: 0, y: 0, z: 0}
-  movementState: 0
+  wallrunJumpVelocity: 1.5
+  crouchState: 0
+  slideBoost: 4
+  sneakSpeed: 3
+  eyeHeight: 1
+  crouchedEyeHeight: 0.7
+  minimumSlideVelocity: 2
   environmentMask:
     serializedVersion: 2
     m_Bits: 55
